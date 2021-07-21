@@ -507,3 +507,15 @@ impl ToOwned for ModifiedUtf8Str {
         unsafe { ModifiedUtf8String::from_modified_utf8_unchecked(Vec::from(&self.0)) }
     }
 }
+
+impl core::fmt::Debug for ModifiedUtf8String {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
+        <ModifiedUtf8Str as core::fmt::Debug>::fmt(self, f)
+    }
+}
+
+impl Display for ModifiedUtf8String {
+    fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
+        <ModifiedUtf8Str as Display>::fmt(self, f)
+    }
+}
