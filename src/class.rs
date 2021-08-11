@@ -1,7 +1,8 @@
-use crate::string::ModifiedUtf8String;
+use crate::string::JString;
 
+#[derive(Clone, Debug)]
 pub enum Constant {
-    Utf8(ModifiedUtf8String),
+    Utf8(JString),
     Int(i32),
     Float(f32),
     Long(i64),
@@ -42,17 +43,18 @@ pub enum Constant {
     Package(u16),
 }
 
+#[derive(Clone, Debug)]
 pub struct ClassFile {
-    min: u16,
-    maj: u16,
-    consts: Vec<Constant>,
-    acc: u16,
-    this: u16,
-    supercl: u16,
-    interfaces: Vec<u16>,
-    fields: Vec<FieldInfo>,
-    methods: Vec<MethodInfo>,
-    attributes: Vec<Attribute>,
+    pub min: u16,
+    pub maj: u16,
+    pub consts: Vec<Constant>,
+    pub acc: u16,
+    pub this: u16,
+    pub supercl: u16,
+    pub interfaces: Vec<u16>,
+    pub fields: Vec<FieldInfo>,
+    pub methods: Vec<MethodInfo>,
+    pub attributes: Vec<Attribute>,
 }
 
 pub mod consts {
@@ -137,7 +139,7 @@ pub enum Attribute {
     Synthetic,
     Signature(u16),
     SourceFile(u16),
-    SourceDebugExtension(ModifiedUtf8String),
+    SourceDebugExtension(JString),
     LineNumberTable(Vec<LineNumberEntry>),
     LocalVariableTable(Vec<LocalVariableInfo>),
     LocalVariableTypeTable(Vec<LocalVariableTypeInfo>),
@@ -173,19 +175,19 @@ pub enum Availability {
 
 #[derive(Clone, Debug)]
 pub struct CodeAttribute {
-    max_stack: u16,
-    max_locals: u16,
-    code: Vec<u8>,
-    exceptions: Vec<ExceptionInfo>,
-    attributes: Vec<Attribute>,
+    pub max_stack: u16,
+    pub max_locals: u16,
+    pub code: Vec<u8>,
+    pub exceptions: Vec<ExceptionInfo>,
+    pub attributes: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ExceptionInfo {
-    start_pc: u16,
-    end_pc: u16,
-    handler_pc: u16,
-    catch_type: u16,
+    pub start_pc: u16,
+    pub end_pc: u16,
+    pub handler_pc: u16,
+    pub catch_type: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -230,53 +232,53 @@ pub enum VerificationInfo {
 
 #[derive(Clone, Debug)]
 pub struct InnerClassInfo {
-    inner_class_info: u16,
-    outer_class_info: u16,
-    inner_name: u16,
-    inner_flags: u16,
+    pub inner_class_info: u16,
+    pub outer_class_info: u16,
+    pub inner_name: u16,
+    pub inner_flags: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct LineNumberEntry {
-    start_pc: u16,
-    line_number: u16,
+    pub start_pc: u16,
+    pub line_number: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct LocalVariableInfo {
-    start_pc: u16,
-    length: u16,
-    name: u16,
-    descriptor: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name: u16,
+    pub descriptor: u16,
+    pub index: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct LocalVariableLocationInfo {
-    start_pc: u16,
-    length: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub index: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct LocalVariableTypeInfo {
-    start_pc: u16,
-    length: u16,
-    name: u16,
-    signature: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name: u16,
+    pub signature: u16,
+    pub index: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct Annotation {
-    class: u16,
-    elements: Vec<AnnotationElement>,
+    pub class: u16,
+    pub elements: Vec<AnnotationElement>,
 }
 
 #[derive(Clone, Debug)]
 pub struct AnnotationElement {
-    name: u16,
-    value: ElementValue,
+    pub name: u16,
+    pub value: ElementValue,
 }
 
 #[derive(Clone, Debug)]
@@ -298,9 +300,9 @@ pub enum ElementValue {
 
 #[derive(Clone, Debug)]
 pub struct TypeAnnotation {
-    target: TypeAnnotationTarget,
-    path: Vec<TypePathSegment>,
-    annotation: Annotation,
+    pub target: TypeAnnotationTarget,
+    pub path: Vec<TypePathSegment>,
+    pub annotation: Annotation,
 }
 
 #[derive(Clone, Debug)]
@@ -339,67 +341,67 @@ pub enum TypePathSegment {
 
 #[derive(Clone, Debug)]
 pub struct BootstrapMethod {
-    href: u16,
-    args: Vec<u16>,
+    pub href: u16,
+    pub args: Vec<u16>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ParameterInfo {
-    name: u16,
-    access: u16,
+    pub name: u16,
+    pub access: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct ModuleInfo {
-    name: u16,
-    access: u16,
-    version: u16,
-    requires: Vec<RequireInfo>,
-    exports: Vec<ExportInfo>,
-    opens: Vec<ExportInfo>,
-    uses: Vec<u16>,
-    provides: Vec<ProvidesInfo>,
+    pub name: u16,
+    pub access: u16,
+    pub version: u16,
+    pub requires: Vec<RequireInfo>,
+    pub exports: Vec<ExportInfo>,
+    pub opens: Vec<ExportInfo>,
+    pub uses: Vec<u16>,
+    pub provides: Vec<ProvidesInfo>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RequireInfo {
-    requires: u16,
-    flags: u16,
-    version: u16,
+    pub requires: u16,
+    pub flags: u16,
+    pub version: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct ExportInfo {
-    exports: u16,
-    flags: u16,
-    to: Vec<u16>,
+    pub exports: u16,
+    pub flags: u16,
+    pub to: Vec<u16>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ProvidesInfo {
-    provides: u16,
-    with: Vec<u16>,
+    pub provides: u16,
+    pub with: Vec<u16>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RecordComponentInfo {
-    name: u16,
-    descriptor: u16,
-    attributes: Vec<Attribute>,
+    pub name: u16,
+    pub descriptor: u16,
+    pub attributes: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FieldInfo {
-    acc: u16,
-    name: u16,
-    descriptor: u16,
-    attributes: Vec<Attribute>,
+    pub acc: u16,
+    pub name: u16,
+    pub descriptor: u16,
+    pub attributes: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MethodInfo {
-    acc: u16,
-    name: u16,
-    descriptor: u16,
-    attributes: Vec<Attribute>,
+    pub acc: u16,
+    pub name: u16,
+    pub descriptor: u16,
+    pub attributes: Vec<Attribute>,
 }

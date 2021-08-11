@@ -1,7 +1,22 @@
+macro_rules! debug_unreachable {
+    () => {{
+        #[cfg(any(debug_assertions, feature = "paranoid"))]
+        {
+            unreachable!()
+        }
+    }};
+    ($($tt:tt)+) => {{
+        #[cfg(any(debug_assertions, feature = "paranoid"))]
+        {
+            unreachable!($($tt)+)
+        }
+    }};
+}
+
 use std::{
     borrow::{Borrow, BorrowMut, Cow},
     fmt::{Display, Formatter, Write},
-    iter::{Copied, FusedIterator},
+    iter::{Copied, Enumerate, FusedIterator},
     ops::{Deref, DerefMut},
 };
 
@@ -11,7 +26,7 @@ use std::{
 /// The two distinctions are that a ModifiedUtf8Str will never contain an embedded NUL byte, and characters will never exceed 3 bytes
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModifiedUtf8Str([u8]);
+pub struct JStr([u8]);
 
 mod sealed {
     pub trait Sealed {}
@@ -43,7 +58,11 @@ impl<'a> Iterator for Bytes<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Bytes<'a> {}
+impl<'a> ExactSizeIterator for Bytes<'a> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl<'a> FusedIterator for Bytes<'a> {}
 
@@ -57,10 +76,57 @@ impl<'a> DoubleEndedIterator for Bytes<'a> {
     }
 }
 
+pub struct JCharIndecies<'a>(Enumerate<Bytes<'a>>);
+
+#[allow(unreachable_code)]
+impl<'a> Iterator for JCharIndecies<'a> {
+    type Item = (usize, u16);
+
+    fn next(&mut self) -> Option<(usize, u16)> {
+        let (n, first) = self.0.next()?;
+
+        if first & 0x80 == 0 {
+            Some((n, first as u16))
+        } else if first & 0xe0 == 0xc0 {
+            let (_, next) = self.0.next().unwrap_or_else(|| {
+                debug_unreachable!("Unexpected EOF in JStr");
+                // SAFETY:
+                // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
+                // Thus this line will never execute because self.0.next() will return Some.
+                unsafe { core::hint::unreachable_unchecked() }
+            });
+            Some((n, ((first & 0x1f) as u16) << 6 | (next & 0x3f) as u16))
+        } else {
+            let (_, next1) = self.0.next().unwrap_or_else(|| {
+                debug_unreachable!("Unexpected EOF in JStr");
+                // SAFETY:
+                // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
+                // Thus this line will never execute because self.0.next() will return Some.
+                unsafe { core::hint::unreachable_unchecked() }
+            });
+            let (_, next2) = self.0.next().unwrap_or_else(|| {
+                debug_unreachable!("Unexpected EOF in JStr");
+                // SAFETY:
+                // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
+                // Thus this line will never execute because self.0.next() will return Some.
+                unsafe { core::hint::unreachable_unchecked() }
+            });
+
+            Some((
+                n,
+                ((first & 0x1f) as u16) << 12
+                    | ((next1 & 0x3f) as u16) << 6
+                    | (next2 & 0x3f) as u16,
+            ))
+        }
+    }
+}
+
 ///
 /// An iterator over a &ModifiedUtf8Str that produces u16s that are valid java characters
 pub struct JChars<'a>(Bytes<'a>);
 
+#[allow(unreachable_code)]
 impl<'a> Iterator for JChars<'a> {
     type Item = u16;
 
@@ -71,7 +137,7 @@ impl<'a> Iterator for JChars<'a> {
             return Some(first); // Ascii
         } else if first & 0xe0 == 0xc0 {
             let next = self.0.next().unwrap_or_else(|| {
-                debug_assert!(false, "Invalid Modified UTF-8 in ModifiedUTf8Str");
+                debug_unreachable!("Unexpected EOF in JStr");
                 // SAFETY:
                 // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
                 // Thus this line will never execute because self.0.next() will return Some.
@@ -83,37 +149,44 @@ impl<'a> Iterator for JChars<'a> {
         /* if first&0xf0==0xe0*/
         {
             let next1 = self.0.next().unwrap_or_else(|| {
-                debug_assert!(false, "Invalid Modified UTF-8 in ModifiedUTf8Str");
+                debug_unreachable!("Unexpected EOF in JStr");
                 // SAFETY:
                 // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
                 // Thus this line will never execute because self.0.next() will return Some.
                 unsafe { core::hint::unreachable_unchecked() }
             }) as u16;
             let next2 = self.0.next().unwrap_or_else(|| {
-                debug_assert!(false, "Invalid Modified UTF-8 in ModifiedUTf8Str");
+                debug_unreachable!("Unexpected EOF in JStr");
                 // SAFETY:
                 // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
                 // Thus this line will never execute because self.0.next() will return Some.
                 unsafe { core::hint::unreachable_unchecked() }
             }) as u16;
 
-            Some((first & 0xf) << 10 | (next1 & 0x3f) << 6 | (next2 & 0x3f))
+            Some((first & 0xf) << 12 | (next1 & 0x3f) << 6 | (next2 & 0x3f))
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Each byte can be 1-3 jchars, so the lower bound is /3
+        (self.0.len() / 3, Some(self.0.len()))
+    }
 }
+
+impl<'a> FusedIterator for JChars<'a> {}
 
 pub struct Chars<'a>(JChars<'a>);
 
 impl<'a> Iterator for Chars<'a> {
     type Item = char;
-
+    #[allow(unreachable_code)]
     fn next(&mut self) -> Option<char> {
         let mut val = self.0.next()? as u32;
         if let 0xd800..=0xdbff = val {
             val = 0x10000
                 + ((val & 0x3ff) << 10)
                 + self.0.next().unwrap_or_else(|| {
-                    debug_assert!(false, "Invalid Modified UTF-8 in ModifiedUTf8Str");
+                    debug_unreachable!("Unexpected EOF in JStr");
                     // SAFETY:
                     // ModifiedUtf8Str is valid Modified Utf-8, so a multibyte character will have sufficient continuation bytes
                     // Thus this line will never execute because self.0.next() will return Some.
@@ -123,6 +196,12 @@ impl<'a> Iterator for Chars<'a> {
         }
 
         Some(<char>::from_u32(val).unwrap())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lo, hi) = self.0.size_hint();
+
+        (lo / 2, hi)
     }
 }
 
@@ -210,7 +289,7 @@ fn validate_modified_utf8(x: &[u8]) -> Result<(), ModifiedUtf8Error> {
     Ok(())
 }
 
-impl ModifiedUtf8Str {
+impl JStr {
     pub fn from_str(x: &str) -> Result<&Self, ModifiedUtf8Error> {
         Self::from_modified_utf8(x.as_bytes())
     }
@@ -221,15 +300,29 @@ impl ModifiedUtf8Str {
         Ok(unsafe { Self::from_modified_utf8_unchecked(x) })
     }
 
+    pub fn from_modified_utf8_mut(x: &mut [u8]) -> Result<&mut Self, ModifiedUtf8Error> {
+        validate_modified_utf8(x)?;
+        // SAFETY:
+        // Validation performed above
+        Ok(unsafe { Self::from_modified_utf8_unchecked_mut(x) })
+    }
+
     ///
     /// Converts a byte slice into a ModifiedUtf8Str without validation
-    /// x is required to be a valid [Modified Utf-8 string]
+    /// x is required to be a valid [Modified Utf-8 string]()
     ///
     pub unsafe fn from_modified_utf8_unchecked(x: &[u8]) -> &Self {
         // SAFETY:
         // x came from a reference so thus is valid. Lifetime of return value is tied to lifetime of x
         // The Safety Invariant is upheld by the precondition of the function
-        return unsafe { &*(x as *const [u8] as *const ModifiedUtf8Str) };
+        unsafe { &*(x as *const [u8] as *const JStr) }
+    }
+
+    pub unsafe fn from_modified_utf8_unchecked_mut(x: &mut [u8]) -> &mut Self {
+        // SAFETY:
+        // x came from a reference so thus is valid. Lifetime of return value is tied to lifetime of x
+        // The Safety Invariant is upheld by the precondition of the function
+        unsafe { &mut *(x as *mut [u8] as *mut JStr) }
     }
 
     pub const fn as_bytes(&self) -> &[u8] {
@@ -258,6 +351,61 @@ impl ModifiedUtf8Str {
         Bytes(self.0.iter().copied())
     }
 
+    pub fn chars(&self) -> Chars {
+        Chars(self.jchars())
+    }
+
+    pub fn jchars(&self) -> JChars {
+        JChars(self.bytes())
+    }
+
+    pub fn is_ascii(&self) -> bool {
+        self.bytes().all(|b| b < 0x80)
+    }
+
+    pub fn make_ascii_lowercase(&mut self) {
+        for b in &mut self.0 {
+            if 0x40 < *b && *b < 0x5b {
+                *b |= 0x20;
+            }
+        }
+    }
+
+    pub fn make_ascii_uppercase(&mut self) {
+        for b in &mut self.0 {
+            if 0x60 < *b && *b < 0x7b {
+                *b &= !0x20;
+            }
+        }
+    }
+
+    pub fn encode_char(c: char, bytes: &mut [u8; 6]) -> &JStr {
+        let x = c as u32;
+        if x < 0x80 {
+            bytes[0] = x as u8;
+            unsafe { Self::from_modified_utf8_unchecked(&bytes[..1]) }
+        } else if x < 0x800 {
+            bytes[0] = 0xc0 | ((x >> 6) & 0x1f) as u8;
+            bytes[1] = 0x80 | (x & 0x3f) as u8;
+            unsafe { Self::from_modified_utf8_unchecked(&bytes[..2]) }
+        } else if x < 0x80000 {
+            bytes[0] = 0xe0 | ((x >> 12) & 0xf) as u8;
+            bytes[1] = 0x80 | ((x >> 6) & 0x3f) as u8;
+            bytes[2] = 0x80 | (x & 0x3f) as u8;
+            unsafe { Self::from_modified_utf8_unchecked(&bytes[..3]) }
+        } else {
+            let mut u16 @ [h, w] = [0; 2];
+            c.encode_utf16(&mut u16);
+            bytes[0] = 0xe0 | ((h >> 12) & 0xf) as u8;
+            bytes[1] = 0x80 | ((h >> 6) & 0x3f) as u8;
+            bytes[2] = 0x80 | (h & 0x3f) as u8;
+            bytes[3] = 0xe0 | ((w >> 12) & 0xf) as u8;
+            bytes[4] = 0x80 | ((w >> 6) & 0x3f) as u8;
+            bytes[5] = 0x80 | (w & 0x3f) as u8;
+            unsafe { Self::from_modified_utf8_unchecked(&bytes[..3]) }
+        }
+    }
+
     pub fn into_str(&self) -> Cow<str> {
         match std::str::from_utf8(&self.0) {
             Ok(s) => Cow::Borrowed(s),
@@ -265,7 +413,7 @@ impl ModifiedUtf8Str {
         }
     }
 
-    pub fn from_utf8_str(st: &str) -> Cow<ModifiedUtf8Str> {
+    pub fn from_utf8_str(st: &str) -> Cow<JStr> {
         match Self::from_str(st) {
             Ok(st) => Cow::Borrowed(st),
             Err(e) => {
@@ -317,31 +465,33 @@ impl ModifiedUtf8Str {
 
                 // SAFETY:
                 // We have validated the contents inserted into `vec`
-                Cow::Owned(ModifiedUtf8String(vec))
+                Cow::Owned(JString(vec))
             }
         }
     }
+
+    pub fn escape_debug(&self) -> EscapeDebug {}
 }
 
-impl AsRef<[u8]> for ModifiedUtf8Str {
+impl AsRef<[u8]> for JStr {
     fn as_ref(&self) -> &[u8] {
         &self.0
     }
 }
 
-impl AsRef<ModifiedUtf8Str> for ModifiedUtf8Str {
+impl AsRef<JStr> for JStr {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl AsMut<ModifiedUtf8Str> for ModifiedUtf8Str {
+impl AsMut<JStr> for JStr {
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
-impl Display for ModifiedUtf8Str {
+impl Display for JStr {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
         let mut inner = self.as_bytes();
         loop {
@@ -372,7 +522,7 @@ impl Display for ModifiedUtf8Str {
     }
 }
 
-impl ::core::fmt::Debug for ModifiedUtf8Str {
+impl ::core::fmt::Debug for JStr {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
         fmt.write_char('"')?;
         let mut inner = self.as_bytes();
@@ -434,9 +584,9 @@ impl FromModifiedUtf8Error {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModifiedUtf8String(Vec<u8>);
+pub struct JString(Vec<u8>);
 
-impl ModifiedUtf8String {
+impl JString {
     pub fn from_modified_utf8(vec: Vec<u8>) -> Result<Self, FromModifiedUtf8Error> {
         if let Err(err) = self::validate_modified_utf8(&vec) {
             Err(FromModifiedUtf8Error { err, vec })
@@ -451,71 +601,75 @@ impl ModifiedUtf8String {
         Self(vec)
     }
 
-    pub fn from_boxed_modified_utf8_str(st: Box<ModifiedUtf8Str>) -> Self {
+    pub fn from_boxed_modified_utf8_str(st: Box<JStr>) -> Self {
         Self(Vec::from(unsafe {
             Box::from_raw(Box::into_raw(st) as *mut [u8])
         }))
     }
+
+    pub fn encode_utf16(&self) -> Vec<u16> {
+        self.jchars().collect()
+    }
 }
 
-impl Deref for ModifiedUtf8String {
-    type Target = ModifiedUtf8Str;
+impl Deref for JString {
+    type Target = JStr;
 
     fn deref(&self) -> &Self::Target {
         // SAFETY:
         // ModifiedUtf8String requires that it's content be valid
-        unsafe { ModifiedUtf8Str::from_modified_utf8_unchecked(&self.0) }
+        unsafe { JStr::from_modified_utf8_unchecked(&self.0) }
     }
 }
 
-impl DerefMut for ModifiedUtf8String {
+impl DerefMut for JString {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(self.0.as_mut() as *mut [u8] as *mut Self::Target) }
     }
 }
 
-impl AsRef<ModifiedUtf8Str> for ModifiedUtf8String {
-    fn as_ref(&self) -> &ModifiedUtf8Str {
+impl AsRef<JStr> for JString {
+    fn as_ref(&self) -> &JStr {
         self
     }
 }
 
-impl AsMut<ModifiedUtf8Str> for ModifiedUtf8String {
-    fn as_mut(&mut self) -> &mut ModifiedUtf8Str {
+impl AsMut<JStr> for JString {
+    fn as_mut(&mut self) -> &mut JStr {
         self
     }
 }
 
-impl Borrow<ModifiedUtf8Str> for ModifiedUtf8String {
-    fn borrow(&self) -> &ModifiedUtf8Str {
+impl Borrow<JStr> for JString {
+    fn borrow(&self) -> &JStr {
         self
     }
 }
 
-impl BorrowMut<ModifiedUtf8Str> for ModifiedUtf8String {
-    fn borrow_mut(&mut self) -> &mut ModifiedUtf8Str {
+impl BorrowMut<JStr> for JString {
+    fn borrow_mut(&mut self) -> &mut JStr {
         self
     }
 }
 
-impl ToOwned for ModifiedUtf8Str {
-    type Owned = ModifiedUtf8String;
+impl ToOwned for JStr {
+    type Owned = JString;
 
     fn to_owned(&self) -> Self::Owned {
         // SAFETY:
         // self is valid Modified UTF-8
-        unsafe { ModifiedUtf8String::from_modified_utf8_unchecked(Vec::from(&self.0)) }
+        unsafe { JString::from_modified_utf8_unchecked(Vec::from(&self.0)) }
     }
 }
 
-impl core::fmt::Debug for ModifiedUtf8String {
+impl core::fmt::Debug for JString {
     fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-        <ModifiedUtf8Str as core::fmt::Debug>::fmt(self, f)
+        <JStr as core::fmt::Debug>::fmt(self, f)
     }
 }
 
-impl Display for ModifiedUtf8String {
+impl Display for JString {
     fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-        <ModifiedUtf8Str as Display>::fmt(self, f)
+        <JStr as Display>::fmt(self, f)
     }
 }
